@@ -34,6 +34,8 @@
           </form>
           <div id="message" class="message" role="status" aria-live="polite" hidden></div>
           <a id="receipt" class="receipt" target="_blank" rel="noopener noreferrer" hidden>View transaction ↗</a>
+          <button id="retry" class="retry-button" type="button" hidden>Retry same signed transaction</button>
+          <p id="retry-note" class="note" hidden>This retries the original transaction without a new signature or another redemption. Reconnect the wallet that signed it to retry.</p>
         </section>
         <section class="pool-summary" aria-label="Live pool information">
           <div><p>USDC remaining in pool</p><strong id="pool-balance">—</strong></div>

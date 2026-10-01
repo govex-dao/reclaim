@@ -2,6 +2,7 @@ import { bcs } from '@mysten/sui/bcs';
 import { coinWithBalance, Transaction } from '@mysten/sui/transactions';
 import { normalizeStructTag, normalizeSuiAddress } from '@mysten/sui/utils';
 import { GOVEX } from './config.js';
+import { withTimeout } from './submission.js';
 
 // Layout of the deployed Move structs. BCS avoids transport-specific JSON shapes.
 export const RedemptionPool = bcs.struct('RedemptionPool', {
@@ -55,12 +56,12 @@ export function validatePool(object) {
 
 export async function loadRedemption(client, address) {
   const signal = AbortSignal.timeout(20_000);
-  const [poolResponse, clockResponse, coinInfo, walletResponse] = await Promise.all([
+  const [poolResponse, clockResponse, coinInfo, walletResponse] = await withTimeout(Promise.all([
     client.getObject({ objectId: GOVEX.poolId, include: { content: true }, signal }),
     client.getObject({ objectId: GOVEX.clockId, include: { content: true }, signal }),
     client.stateService.getCoinInfo({ coinType: GOVEX.assetType }, { abort: signal }),
     address ? client.getBalance({ owner: address, coinType: GOVEX.assetType, signal }) : null,
-  ]);
+  ]));
   const pool = validatePool(poolResponse.object);
   const supply = coinInfo.response.treasury?.totalSupply;
   if (supply === undefined) throw new Error('The live GOVEX supply is unavailable.');

@@ -1,9 +1,9 @@
 import { createDAppKit } from '@mysten/dapp-kit-core';
 import '@mysten/dapp-kit-core/web';
 import { SuiGrpcClient } from '@mysten/sui/grpc';
-import { Transaction } from '@mysten/sui/transactions';
 import { GOVEX } from './config.js';
 import { buildClaimTransaction, calculateRedemption, formatAmount, loadRedemption, parseAmount, validateClaim } from './redemption.js';
+import { signClaim, submitSignedClaim, withTimeout } from './submission.js';
 import './style.css';
 
 const client = new SuiGrpcClient({ network: GOVEX.network, baseUrl: GOVEX.grpcUrl });
@@ -25,7 +25,24 @@ let phase = '';
 let requestId = 0;
 let lastAddress;
 let useMax = true;
-let submittedDigest = null;
+const pendingStorageKey = 'govex-reclaim:pending';
+let pendingClaim = null;
+try {
+  const saved = JSON.parse(sessionStorage.getItem(pendingStorageKey));
+  if (saved && ['address', 'digest', 'bytes', 'signature'].every((key) => typeof saved[key] === 'string')) pendingClaim = saved;
+} catch { /* Session storage may be unavailable; in-memory tracking still works. */ }
+
+function setPendingClaim(claim) {
+  pendingClaim = claim;
+  try {
+    if (claim) sessionStorage.setItem(pendingStorageKey, JSON.stringify(claim));
+    else sessionStorage.removeItem(pendingStorageKey);
+  } catch { /* Keep the pending claim in memory if browser storage is disabled. */ }
+}
+function showReceipt(digest) {
+  byId('receipt').href = `https://suiscan.xyz/mainnet/tx/${encodeURIComponent(digest)}`;
+  byId('receipt').hidden = false;
+}
 
 function currentAccount() { return kit.stores.$connection.get().account; }
 function showMessage(text, error = false) {
@@ -58,29 +75,42 @@ function render() {
   byId('amount-error').hidden = !amountError;
   amountInput.setAttribute('aria-invalid', String(!!amountError));
   byId('estimate').textContent = usable && amount > 0n && !amountError ? formatAmount(calculateRedemption(state.poolBalance, amount, state.supply), GOVEX.redeemCoinDecimals) : '—';
-  const canRedeem = account && usable && open && amount > 0n && !amountError && !busy && !submittedDigest;
+  const canRedeem = account && usable && open && amount > 0n && !amountError && !busy && !pendingClaim;
   byId('redeem').disabled = !canRedeem;
-  const label = busy ? phase : submittedDigest ? 'Refreshing after redemption…' : !account ? 'Connect wallet to redeem' : !usable ? 'Waiting for live balances…' : !open ? 'Redemption not open yet' : state.walletBalance === 0n ? 'No GOVEX to redeem' : 'Redeem GOVEX for USDC';
+  const label = busy ? phase : pendingClaim ? 'Waiting for transaction confirmation…' : !account ? 'Connect wallet to redeem' : !usable ? 'Waiting for live balances…' : !open ? 'Redemption not open yet' : state.walletBalance === 0n ? 'No GOVEX to redeem' : 'Redeem GOVEX for USDC';
   byId('redeem').replaceChildren(document.createTextNode(label));
   if (canRedeem) { const arrow = document.createElement('span'); arrow.textContent = '↗'; arrow.setAttribute('aria-hidden', 'true'); byId('redeem').append(arrow); }
+  byId('retry').hidden = !pendingClaim;
+  byId('retry').disabled = busy || !account || account.address !== pendingClaim?.address;
+  byId('retry-note').hidden = !pendingClaim;
 }
 
 async function refresh() {
-  if (busy) return;
+  if (busy || loading) return;
   const thisRequest = ++requestId;
   const address = currentAccount()?.address ?? null;
   const previousLoadError = loadError;
+  let poolLoaded = false;
   loading = true;
   render();
   try {
     let fresh = await loadRedemption(client, address);
     if (thisRequest !== requestId || address !== (currentAccount()?.address ?? null)) return;
-    if (submittedDigest) {
+    poolLoaded = true;
+    if (pendingClaim) {
+      state = fresh;
+      loadError = '';
+      if (address && useMax) amountInput.value = formatAmount(state.walletBalance, GOVEX.assetDecimals);
+      render();
       // Keep claims disabled until the fullnode has observed the submitted claim.
-      await client.waitForTransaction({ digest: submittedDigest, timeout: 15_000 });
+      const pending = pendingClaim;
+      const result = await withTimeout(client.waitForTransaction({ digest: pending.digest, timeout: 15_000 }), 16_000);
       fresh = await loadRedemption(client, address);
       if (thisRequest !== requestId || address !== (currentAccount()?.address ?? null)) return;
-      submittedDigest = null;
+      const transaction = result.Transaction ?? result.FailedTransaction;
+      if (!transaction || transaction.digest !== pending.digest) throw new Error('The node has not confirmed this transaction yet.');
+      setPendingClaim(null);
+      showMessage(result.FailedTransaction ? result.FailedTransaction.status.error?.message ?? 'The transaction failed. Your GOVEX was not redeemed.' : 'GOVEX redeemed. Your USDC was sent to the wallet that signed the transaction.', !!result.FailedTransaction);
       useMax = true;
     }
     state = fresh;
@@ -89,8 +119,9 @@ async function refresh() {
     if (previousLoadError && byId('message').textContent === previousLoadError) showMessage('');
   } catch (error) {
     if (thisRequest !== requestId) return;
-    loadError = error instanceof Error ? error.message : 'Could not load the redemption pool.';
-    showMessage(submittedDigest ? 'Redemption submitted. Use the transaction link to check its status; balances will refresh automatically.' : loadError, !submittedDigest);
+    const detail = error instanceof Error ? error.message : 'Could not load the redemption pool.';
+    if (!poolLoaded || !pendingClaim) loadError = detail;
+    showMessage(pendingClaim ? 'The transaction outcome is not confirmed yet. Further claims are paused. Check the transaction link, or retry the same signed transaction using the original wallet.' : loadError, !pendingClaim);
   } finally {
     if (thisRequest === requestId) { loading = false; render(); }
   }
@@ -101,11 +132,12 @@ kit.stores.$connection.subscribe((connection) => {
   if (address === lastAddress) return;
   lastAddress = address;
   ++requestId;
+  loading = false;
   state = null;
   loadError = '';
   useMax = true;
   amountInput.value = '';
-  if (!busy && !submittedDigest) { showMessage(''); byId('receipt').hidden = true; }
+  if (!busy && !pendingClaim) { showMessage(''); byId('receipt').hidden = true; }
   render();
   void refresh();
 });
@@ -117,14 +149,36 @@ byId('max').addEventListener('click', () => {
   render();
 });
 byId('refresh').addEventListener('click', () => { void refresh(); });
+async function broadcastPendingClaim() {
+  phase = 'Submitting redemption…';
+  render();
+  const result = await submitSignedClaim(client, pendingClaim);
+  if (result.FailedTransaction) {
+    setPendingClaim(null);
+    throw new Error(result.FailedTransaction.status.error?.message ?? 'The transaction failed. Your GOVEX was not redeemed.');
+  }
+  showMessage('GOVEX redeemed. Your USDC was sent to the wallet that signed the transaction.');
+}
+function showClaimError(error) {
+  const detail = error instanceof Error ? error.message : 'Redemption failed.';
+  showMessage(pendingClaim ? 'The transaction outcome is not confirmed yet. Further claims are paused. Check the transaction link, or retry the same signed transaction using the original wallet.' : detail, !pendingClaim);
+}
+byId('retry').addEventListener('click', async () => {
+  if (!pendingClaim || busy || currentAccount()?.address !== pendingClaim.address) return;
+  busy = true;
+  ++requestId;
+  loading = false;
+  try { await broadcastPendingClaim(); }
+  catch (error) { showClaimError(error); }
+  finally { busy = false; phase = ''; render(); void refresh(); }
+});
 byId('claim-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   const account = currentAccount();
   if (!account || busy || byId('redeem').disabled) return;
   const address = account.address;
   const redeemMax = useMax;
-  const requestedAmount = parseAmount(amountInput.value);
-  let awaitingWalletResult = false;
+  const requestedText = amountInput.value;
   busy = true;
   ++requestId;
   loading = false;
@@ -133,6 +187,7 @@ byId('claim-form').addEventListener('submit', async (event) => {
   byId('receipt').hidden = true;
   render();
   try {
+    const requestedAmount = parseAmount(requestedText);
     const fresh = await loadRedemption(client, address);
     const amount = redeemMax ? fresh.walletBalance : requestedAmount;
     validateClaim(fresh, amount);
@@ -140,27 +195,18 @@ byId('claim-form').addEventListener('submit', async (event) => {
     state = fresh;
     amountInput.value = formatAmount(amount, GOVEX.assetDecimals);
     const tx = buildClaimTransaction(address, amount);
-    const bytes = await tx.build({ client });
-    const simulation = await client.simulateTransaction({ transaction: bytes, signal: AbortSignal.timeout(20_000) });
+    const bytes = await withTimeout(tx.build({ client }));
+    const simulation = await withTimeout(client.simulateTransaction({ transaction: bytes, signal: AbortSignal.timeout(20_000) }));
     if (simulation.FailedTransaction) throw new Error(simulation.FailedTransaction.status.error?.message ?? 'The redemption transaction could not be completed.');
     if (currentAccount()?.address !== address) throw new Error('Your wallet changed. Try again with the current wallet.');
     phase = 'Confirm in your wallet…';
     render();
-    awaitingWalletResult = true;
-    const result = await kit.signAndExecuteTransaction({ transaction: Transaction.from(bytes), account, network: GOVEX.network });
-    awaitingWalletResult = false;
-    const transaction = result.Transaction ?? result.FailedTransaction;
-    if (transaction?.digest) {
-      byId('receipt').href = `https://suiscan.xyz/mainnet/tx/${encodeURIComponent(transaction.digest)}`;
-      byId('receipt').hidden = false;
-    }
-    if (result.FailedTransaction) throw new Error(result.FailedTransaction.status.error?.message ?? 'The transaction failed.');
-    if (!result.Transaction) throw new Error('The wallet did not return a transaction result. Check your wallet before trying again.');
-    submittedDigest = result.Transaction.digest;
-    showMessage('GOVEX redeemed. Your USDC was sent to the wallet that signed the transaction.');
+    const signed = await signClaim({ kit, bytes, account, getAccount: currentAccount });
+    setPendingClaim(signed);
+    showReceipt(signed.digest);
+    await broadcastPendingClaim();
   } catch (error) {
-    const detail = error instanceof Error ? error.message : 'Redemption failed.';
-    showMessage(awaitingWalletResult ? `${detail} Check your wallet’s transaction history before retrying.` : detail, true);
+    showClaimError(error);
   } finally {
     busy = false;
     phase = '';
@@ -168,6 +214,11 @@ byId('claim-form').addEventListener('submit', async (event) => {
     void refresh();
   }
 });
+
+if (pendingClaim) {
+  showReceipt(pendingClaim.digest);
+  showMessage('Resuming confirmation of your previous redemption. Further claims are paused until its outcome is confirmed.');
+}
 
 for (const [label, value, type] of [
   ['Govex DAO', GOVEX.daoId, 'object'],

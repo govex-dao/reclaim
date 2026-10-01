@@ -30,6 +30,8 @@ All fixed values are in [`src/config.js`](src/config.js): the DAO, pool, capabil
 
 Live balances, circulating supply, and the unlock time are read from Sui. They are intentionally not fixed: successful claims and external burns change them. Estimates use integer arithmetic matching the deployed Move claim, including rounding down to USDC's six decimal places. The app verifies the pool's type, DAO and capability before enabling redemption, refreshes before submission, simulates the transaction, and signs explicitly on mainnet. Coin selection supports multiple coin objects and Sui address balances. A holder needs SUI for gas.
 
+The wallet signs before the app submits directly to Sui. The app checks that the signed transaction matches the prepared transaction and records its digest before submission. Until its outcome is confirmed, new claims stay disabled; retries submit exactly the same signed transaction, which cannot execute twice. The pending transaction is kept in browser session storage so reloading the same tab preserves this protection. No signing keys are stored.
+
 To verify the fixed deployment against mainnet without connecting a wallet or submitting anything:
 
 ```sh
@@ -42,4 +44,4 @@ Built using the official [Mysten Sui client](https://sdk.mystenlabs.com/sui/clie
 
 ## Verification scope
 
-Unit tests cover exact amounts, rounding, pool identity, circulating supply changes, claim eligibility, and the transaction's target, types, object arguments, and payout recipient. The mainnet check verifies the live objects and deployed function signature. These checks do not submit a live redemption; the final signing and execution happen in the holder's own wallet.
+Unit tests cover exact amounts, rounding, pool identity, circulating supply changes, claim eligibility, transaction arguments and payout recipient, wallet changes during signing, changed signed transactions, and retry behavior after an unknown submission outcome. The mainnet check verifies the live objects and deployed function signature. These checks do not submit a live redemption; holders approve signing in their own wallets and the app submits the signed transaction to Sui.

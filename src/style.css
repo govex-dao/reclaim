@@ -48,6 +48,8 @@ mysten-dapp-kit-connect-button::part(trigger) { width: 100%; min-height: 44px; j
 .message { font-size: 12px; line-height: 1.6; color: #c0dbc9; background: #bbf7d009; padding: 12px; margin-top: 16px; border-radius: 8px; overflow-wrap: anywhere; }
 .message.error { color: #fac0b2; background: #ff998810; }
 .receipt { display: inline-block; font-size: 12px; color: #bbf7d0; margin-top: 10px; }
+.retry-button { display: block; width: 100%; margin-top: 14px; padding: 12px; border: 1px solid #bbf7d040; border-radius: 9px; color: #bbf7d0; background: transparent; font-size: 12px; }
+.retry-button:disabled { opacity: .5; }
 .pool-summary { display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 10px; padding: 23px 5px; border-bottom: 1px solid #ffffff0e; }
 .pool-summary p { font-size: 11px; color: #90a097; margin: 0 0 6px; }
 .pool-summary strong { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
