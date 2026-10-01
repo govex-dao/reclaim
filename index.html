@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Redeem GOVEX for your proportional share of the Govex DAO USDC redemption pool on Sui mainnet." />
+    <meta name="referrer" content="no-referrer" />
+    <title>Govex · Reclaim</title>
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <a class="brand" href="./" aria-label="Govex Reclaim home"><img src="./icon.svg" alt="" width="32" height="32" />govex <span>/ reclaim</span></a>
+        <span class="network"><i></i>Sui mainnet</span>
+      </header>
+      <main>
+        <div class="intro">
+          <p class="eyebrow">GOVEX DAO WIND-DOWN</p>
+          <h1>Your tokens.<br />Your share.</h1>
+          <p class="description">Redeem your GOVEX for a proportional share of the DAO’s USDC redemption pool.</p>
+        </div>
+        <section class="card" aria-label="Redeem GOVEX">
+          <div class="card-heading"><h2>Reclaim USDC</h2><span id="pool-status" class="badge">Loading pool…</span></div>
+          <div class="wallet"><mysten-dapp-kit-connect-button>Connect wallet</mysten-dapp-kit-connect-button></div>
+          <form id="claim-form">
+            <div class="amount-heading"><label for="amount">GOVEX to redeem</label><button id="max" class="text-button" type="button" disabled>Max</button></div>
+            <div class="amount-box"><input id="amount" name="amount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" spellcheck="false" aria-describedby="balance amount-error" disabled /><span>GOVEX</span></div>
+            <p id="balance" class="balance">Connect your wallet to see your balance.</p>
+            <p id="amount-error" class="field-error" role="alert" hidden></p>
+            <div class="output"><span>Estimated USDC received</span><strong><span id="estimate">—</span> <small>USDC</small></strong></div>
+            <button id="redeem" class="primary-button" type="submit" disabled>Connect wallet to redeem <span aria-hidden="true">↗</span></button>
+            <p class="note">The GOVEX you redeem is permanently burned. USDC goes directly to your connected wallet. Keep a little SUI for the network fee.</p>
+          </form>
+          <div id="message" class="message" role="status" aria-live="polite" hidden></div>
+          <a id="receipt" class="receipt" target="_blank" rel="noopener noreferrer" hidden>View transaction ↗</a>
+        </section>
+        <section class="pool-summary" aria-label="Live pool information">
+          <div><p>USDC remaining in pool</p><strong id="pool-balance">—</strong></div>
+          <div><p>USDC per GOVEX</p><strong id="rate">—</strong></div>
+          <button id="refresh" class="refresh" type="button" aria-label="Refresh live pool balances">↻</button>
+          <p id="updated" class="updated">Reading directly from Sui…</p>
+        </section>
+        <details>
+          <summary>How redemption works</summary>
+          <p>Each GOVEX token receives the same proportional share: USDC in the pool × GOVEX redeemed ÷ current GOVEX supply. Estimates update every 30 seconds. The final amount is calculated on-chain when your transaction executes, rounded down to the nearest 0.000001 USDC.</p>
+          <p>You can redeem some or all of the GOVEX in your wallet. There is no Govex service fee for this claim.</p>
+        </details>
+        <details>
+          <summary>Verify the contracts</summary>
+          <p>This app only supports the Govex DAO on Sui mainnet.</p>
+          <dl id="contracts"></dl>
+        </details>
+      </main>
+      <footer><span>GOVEX → USDC · Sui mainnet</span><a href="https://github.com/govex-dao/reclaim" target="_blank" rel="noopener noreferrer">View source ↗</a></footer>
+    </div>
+    <noscript><p class="noscript">Enable JavaScript to connect a Sui wallet and redeem GOVEX.</p></noscript>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
